@@ -1,108 +1,153 @@
 # encoding: utf-8
 require "dxruby"
+require "pry"
 include Math
 
 # 初期化
-ENEMY_IMG = Image.load("enemy.png")
-BULLET_IMG = Image.load("bullet.png")
-WIDTH = 640
-HEIGHT = 720
+Window.width = 640
+Window.height = 720
 ENEMIES = []
 BULLETS = []
 SPRITES = [ENEMIES,BULLETS]
 
-# 等速直線運動
-def liner_uniform_motion(deg,spd)
-  Fiber.new do |obj|
-    vx = cos(deg*PI/180)*spd
-    vy = sin(deg*PI/180)*spd
-    loop do
-      obj.x += vx
-      obj.y += vy
-      Fiber.yield
-    end
-  end
-end
-
-# 停止しながら向きを変える
-def go_and_stop(go,stop)
-  Fiber.new do |obj|
-    loop do
-      vx = rand(-3..3)
-      go.times do
-        obj.x += vx
-        obj.y += 2
-        Fiber.yield
-      end
-      stop.times do
-        Fiber.yield
-      end
-    end
-  end
-end
-
-# 移動パターン設定
-module MovePattern
-  def initialize(x,y,img,pat)
+# 敵物体共通
+class LinerMover < Sprite
+  attr_accessor :deg, :spd, :action, :stop
+  def initialize(x,y,deg,spd,img)
     super(x,y,img)
-    @pat = pat
+    self.deg = deg
+    self.spd = spd
+    self.action = []
+    self.stop = false
   end
-  def update
-    super
-    @pat.resume(self)
-  end
-end
 
-module OutOfFrame　
   def update
-    super
-    vanish unless x.between?(-32,WIDTH) && y.between?(-32,HEIGHT)
+    action.each{|a|a.resume(self)}
+    return if stop
+    begin
+      self.x += cos(deg*PI/180)*spd
+      self.y += sin(deg*PI/180)*spd
+    rescue
+      binding.pry
+    end
+    vanish unless in_frame?
+  end
+
+  def in_frame?
+    x.between?(-32,Window.width) && y.between?(-32,Window.height)
   end
 end
 
 # 弾
-class Bullet < Sprite
-  include MovePattern,OutOfFrame
+class Bullet < LinerMover
+  IMG = Image.load("bullet.png")
+
   def initialize(x,y,deg,spd)
-    pat = liner_uniform_motion(deg,spd)
-    super(x,y,BULLET_IMG,pat)
+    super(x,y,deg,spd,IMG)
   end
 end
 
 # 敵
-class Enemy < Sprite
-  include MovePattern,OutOfFrame
-  def initialize
-    pat = go_and_stop(60,90)
-    super(rand(0..WIDTH),0,ENEMY_IMG,pat)
+class Enemy < LinerMover
+  IMG = Image.load("enemy.png")
 
-    @type = rand(1..2)
-    @tick = 0
+  def initialize(x,y)
+    super(x,y,rand(80..100),rand(1..4),IMG)
+    action << [stop_and_go,zigzag,wave].sample
+    action << [shot_around,shot_spiral].sample
+    self.angle = 0
   end
 
   def update
     super
-    self.angle += 3
-    @tick += 1
-
-    case @type
-    when 1
-      BULLETS << Bullet.new(x+32,y+32,@tick*5,5) if @tick % 2 == 0
-    when 2
-      if @tick % 60 == 0
-        36.times do |i|
-          BULLETS << Bullet.new(x+32,y+32,i*10,5)
-        end
-      end
-    end
-
+    self.angle += 5
   end
 end
 
-Window.width = WIDTH
-Window.height = HEIGHT
+# ２秒進んで３秒とまる
+def stop_and_go
+  Fiber.new do |sprite|
+    loop do
+      60.times{Fiber.yield}
+      sprite.stop = true
+      90.times{Fiber.yield}
+      sprite.stop = false
+    end
+  end
+end
+
+# ジグザグに３回移動して外に出る
+def zigzag
+  Fiber.new do |sprite|
+    sprite.deg = rand(100..120)
+    sprite.spd = 4
+    60.times{Fiber.yield}
+
+    sprite.deg = rand(-30..-10)
+    sprite.spd = 3
+    60.times{Fiber.yield}
+
+    sprite.deg = rand(-100..-90)
+    sprite.spd = 2
+    60.times{Fiber.yield}
+
+    sprite.deg = rand(70..90)
+    sprite.spd = 6
+    loop{Fiber.yield}
+  end
+end
+
+def wave
+  Fiber.new do |sprite|
+    sprite.spd = 5
+    loop do
+      60.upto(120) do |deg|
+        sprite.deg = deg
+        Fiber.yield
+      end
+      120.downto(60) do |deg|
+        sprite.deg = deg
+        Fiber.yield
+      end
+    end
+  end
+end
+
+# 全方位に弾を発射
+def shot_around
+  Fiber.new do |sprite|
+    loop do
+      36.times do |i|
+        BULLETS << Bullet.new(sprite.x+32,sprite.y+32,i*10,5)
+      end
+      60.times{Fiber.yield}
+    end
+  end
+end
+
+# 渦巻き状に弾を発射
+def shot_spiral
+  Fiber.new do |sprite|
+    loop do
+      0.step(355,5) do |deg|
+        BULLETS << Bullet.new(sprite.x+32,sprite.y+32,deg,5)
+        2.times{Fiber.yield}
+      end
+    end
+  end
+end
+
+# 敵出現パターン
+ENCOUNTER = Fiber.new do
+  loop do
+    ENEMIES << Enemy.new(rand(300..340),0)
+    rand(360).times{Fiber.yield}
+  end
+end
+
+# メイン処理
 Window.loop do
-  ENEMIES << Enemy.new if ENEMIES.size == 0
+  ENCOUNTER.resume
   Sprite.update SPRITES
   Sprite.clean SPRITES
   Sprite.draw SPRITES

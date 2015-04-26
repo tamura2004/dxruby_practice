@@ -1,6 +1,5 @@
 # encoding: utf-8
 require "dxruby"
-require "pry"
 include Math
 
 # 初期化
@@ -24,12 +23,8 @@ class LinerMover < Sprite
   def update
     action.each{|a|a.resume(self)}
     return if stop
-    begin
-      self.x += cos(deg*PI/180)*spd
-      self.y += sin(deg*PI/180)*spd
-    rescue
-      binding.pry
-    end
+    self.x += cos(deg*PI/180)*spd
+    self.y += sin(deg*PI/180)*spd
     vanish unless in_frame?
   end
 
@@ -97,6 +92,7 @@ def zigzag
   end
 end
 
+# 左右に揺れて降下
 def wave
   Fiber.new do |sprite|
     sprite.spd = 5

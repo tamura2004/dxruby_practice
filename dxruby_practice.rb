@@ -48,8 +48,8 @@ class Enemy < LinerMover
 
   def initialize(x,y)
     super(x,y,rand(80..100),rand(1..4),IMG)
-    action << [stop_and_go,zigzag,wave].sample
-    action << [shot_around,shot_spiral].sample
+    action << [StopAndGo,ZigZag,Wave].sample.new
+    action << [ShotAround,ShotSpiral].sample.new
     self.angle = 0
   end
 
@@ -59,75 +59,94 @@ class Enemy < LinerMover
   end
 end
 
+# アクション共通
+class Action < Fiber
+  def initialize
+    super do |sprite|
+      loop do
+        yield sprite
+      end
+    end
+  end
+
+  def wait
+    Fiber.yield
+  end
+
+  def wait_seconds(s)
+    (s*60).to_i.times{Fiber.yield}
+  end
+end
+
 # ２秒進んで３秒とまる
-def stop_and_go
-  Fiber.new do |sprite|
-    loop do
-      60.times{Fiber.yield}
-      sprite.stop = true
-      90.times{Fiber.yield}
-      sprite.stop = false
+class StopAndGo < Action
+  def initialize
+    super do |sprite|
+      wait_seconds(1); sprite.stop = true
+      wait_seconds(1.5); sprite.stop = false
     end
   end
 end
 
 # ジグザグに３回移動して外に出る
-def zigzag
-  Fiber.new do |sprite|
-    sprite.deg = rand(100..120)
-    sprite.spd = 4
-    60.times{Fiber.yield}
+class ZigZag < Action
+  def initialize
+    super do |sprite|
+      sprite.deg = rand(100..120)
+      sprite.spd = 4
+      wait_seconds(1)
 
-    sprite.deg = rand(-30..-10)
-    sprite.spd = 3
-    60.times{Fiber.yield}
+      sprite.deg = rand(-30..-10)
+      sprite.spd = 3
+      wait_seconds(1)
 
-    sprite.deg = rand(-100..-90)
-    sprite.spd = 2
-    60.times{Fiber.yield}
+      sprite.deg = rand(-100..-90)
+      sprite.spd = 2
+      wait_seconds(1)
 
-    sprite.deg = rand(70..90)
-    sprite.spd = 6
-    loop{Fiber.yield}
+      sprite.deg = rand(70..90)
+      sprite.spd = 6
+      loop{wait}
+    end
   end
 end
 
 # 左右に揺れて降下
-def wave
-  Fiber.new do |sprite|
-    sprite.spd = 5
-    loop do
+class Wave < Action
+  def initialize
+    super do |sprite|
+      sprite.spd = 5
       60.upto(120) do |deg|
         sprite.deg = deg
-        Fiber.yield
+        wait()
       end
       120.downto(60) do |deg|
         sprite.deg = deg
-        Fiber.yield
+        wait()
       end
     end
   end
 end
 
 # 全方位に弾を発射
-def shot_around
-  Fiber.new do |sprite|
-    loop do
+class ShotAround < Action
+  def initialize
+    super do |sprite|
       36.times do |i|
         BULLETS << Bullet.new(sprite.x+32,sprite.y+32,i*10,5)
       end
-      60.times{Fiber.yield}
+      wait_seconds(1)
     end
   end
 end
 
 # 渦巻き状に弾を発射
-def shot_spiral
-  Fiber.new do |sprite|
-    loop do
+class ShotSpiral < Action
+  def initialize
+    super do |sprite|
       0.step(355,5) do |deg|
         BULLETS << Bullet.new(sprite.x+32,sprite.y+32,deg,5)
-        2.times{Fiber.yield}
+        wait();wait()
       end
     end
   end

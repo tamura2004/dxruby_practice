@@ -9,8 +9,8 @@ ENEMIES = []
 BULLETS = []
 SPRITES = [ENEMIES,BULLETS]
 
-# 敵物体共通
-class LinerMover < Sprite
+# 移動物体共通
+class MovingSprite < Sprite
   attr_accessor :deg, :spd, :action, :stop
   def initialize(x,y,deg,spd,img)
     super(x,y,img)
@@ -34,7 +34,7 @@ class LinerMover < Sprite
 end
 
 # 弾
-class Bullet < LinerMover
+class Bullet < MovingSprite
   IMG = Image.load("bullet.png")
 
   def initialize(x,y,deg,spd)
@@ -43,13 +43,13 @@ class Bullet < LinerMover
 end
 
 # 敵
-class Enemy < LinerMover
+class Enemy < MovingSprite
   IMG = Image.load("enemy.png")
 
   def initialize(x,y)
     super(x,y,rand(80..100),rand(1..4),IMG)
     action << [StopAndGo,ZigZag,Wave].sample.new
-    action << [ShotAround,ShotSpiral].sample.new
+    action << [ShotAround,ShotSpiral,TriShot].sample.new
     self.angle = 0
   end
 
@@ -61,29 +61,56 @@ end
 
 # アクション共通
 class Action < Fiber
-  def initialize
+  def initialize(&block)
     super do |sprite|
       loop do
-        yield sprite
+        sprite.instance_eval(&block)
       end
     end
   end
+end
 
-  def wait
-    Fiber.yield
+module ActionDSL
+  # Action用DSL
+  def wait_sec(sec=1)
+    (sec*60).to_i.times{Fiber.yield}
   end
 
-  def wait_seconds(s)
-    (s*60).to_i.times{Fiber.yield}
+  def wait_tick(t=1)
+    t.to_i.times{Fiber.yield}
+  end
+
+  def stay
+    self.stop = true
+  end
+
+  def go
+    self.stop = false
+  end
+
+  def goto_in_time(xx,yy,sec)
+    dx = xx-x
+    dy = yy-y
+    self.deg = atan2(dy,dx)*180/PI
+    self.spd = sqrt(dx**2+dy**2)/(sec*60)
+    wait_sec(sec)
+  end
+
+  def shot(deg,spd)
+    BULLETS << Bullet.new(x+32,y+32,deg,spd)
   end
 end
+
+class MovingSprite
+  include ActionDSL
+end
+
 
 # ２秒進んで３秒とまる
 class StopAndGo < Action
   def initialize
-    super do |sprite|
-      wait_seconds(1); sprite.stop = true
-      wait_seconds(1.5); sprite.stop = false
+    super do
+      wait_sec(1); stay; wait_sec(2); go
     end
   end
 end
@@ -91,22 +118,11 @@ end
 # ジグザグに３回移動して外に出る
 class ZigZag < Action
   def initialize
-    super do |sprite|
-      sprite.deg = rand(100..120)
-      sprite.spd = 4
-      wait_seconds(1)
-
-      sprite.deg = rand(-30..-10)
-      sprite.spd = 3
-      wait_seconds(1)
-
-      sprite.deg = rand(-100..-90)
-      sprite.spd = 2
-      wait_seconds(1)
-
-      sprite.deg = rand(70..90)
-      sprite.spd = 6
-      loop{wait}
+    super do
+      goto_in_time(100,600,2)
+      goto_in_time(500,100,1)
+      goto_in_time(50,200,3)
+      goto_in_time(320,900,3)
     end
   end
 end
@@ -114,15 +130,10 @@ end
 # 左右に揺れて降下
 class Wave < Action
   def initialize
-    super do |sprite|
-      sprite.spd = 5
-      60.upto(120) do |deg|
-        sprite.deg = deg
-        wait()
-      end
-      120.downto(60) do |deg|
-        sprite.deg = deg
-        wait()
+    super do
+      10.times do |i|
+        goto_in_time(50,i*100+50,1)
+        goto_in_time(558,i*100+100,1)
       end
     end
   end
@@ -131,11 +142,11 @@ end
 # 全方位に弾を発射
 class ShotAround < Action
   def initialize
-    super do |sprite|
+    super do
       36.times do |i|
-        BULLETS << Bullet.new(sprite.x+32,sprite.y+32,i*10,5)
+        shot(i*10,5)
       end
-      wait_seconds(1)
+      wait_sec(1)
     end
   end
 end
@@ -143,11 +154,24 @@ end
 # 渦巻き状に弾を発射
 class ShotSpiral < Action
   def initialize
-    super do |sprite|
-      0.step(355,5) do |deg|
-        BULLETS << Bullet.new(sprite.x+32,sprite.y+32,deg,5)
-        wait();wait()
+    super do
+      0.step(355,5) do |d|
+        shot(d,5)
+        wait_tick(2)
       end
+    end
+  end
+end
+
+# 三連射
+class TriShot < Action
+  def initialize
+    super do
+      deg = rand(45..135)
+      stay
+      24.times{shot(deg,5);wait_tick}
+      go
+      wait_sec(3)
     end
   end
 end
@@ -156,7 +180,7 @@ end
 ENCOUNTER = Fiber.new do
   loop do
     ENEMIES << Enemy.new(rand(300..340),0)
-    rand(360).times{Fiber.yield}
+    180.times{Fiber.yield}
   end
 end
 

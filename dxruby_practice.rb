@@ -49,7 +49,7 @@ class Enemy < MovingSprite
   def initialize(x,y)
     super(x,y,rand(80..100),rand(1..4),IMG)
     action << [StopAndGo,ZigZag,Wave].sample.new
-    action << [ShotAround,ShotSpiral,TriShot].sample.new
+    action << [ShotAround,ShotSpiral,Lazor].sample.new
     self.angle = 0
   end
 
@@ -163,8 +163,8 @@ class ShotSpiral < Action
   end
 end
 
-# 三連射
-class TriShot < Action
+# レーザーもどき
+class Lazor < Action
   def initialize
     super do
       deg = rand(45..135)

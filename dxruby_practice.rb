@@ -1,13 +1,11 @@
 # encoding: utf-8
 require "dxruby"
+require "forwardable"
 include Math
 
 # 初期化
 Window.width = 640
 Window.height = 720
-ENEMIES = []
-BULLETS = []
-SPRITES = [ENEMIES,BULLETS]
 
 # 移動物体共通
 class MovingSprite < Sprite
@@ -44,18 +42,35 @@ end
 
 # 敵
 class Enemy < MovingSprite
+  attr_accessor :bullets
   IMG = Image.load("enemy.png")
 
-  def initialize(x,y)
+  def initialize(x,y,scene)
     super(x,y,rand(80..100),rand(1..4),IMG)
     action << [StopAndGo,ZigZag,Wave].sample.new
     action << [ShotAround,ShotSpiral,Lazor].sample.new
     self.angle = 0
+    @bullets = []
   end
 
   def update
     super
+    Sprite.update @bullets
     self.angle += 5
+  end
+
+  def clean
+    super
+    Sprite.clean @bullets
+  end
+
+  def draw
+    super
+    Sprite.draw @bullets
+  end
+
+  def shot(deg,spd)
+    @bullets << Bullet.new(x+32,y+32,deg,spd)
   end
 end
 
@@ -94,10 +109,6 @@ module ActionDSL
     self.deg = atan2(dy,dx)*180/PI
     self.spd = sqrt(dx**2+dy**2)/(sec*60)
     wait_sec(sec)
-  end
-
-  def shot(deg,spd)
-    BULLETS << Bullet.new(x+32,y+32,deg,spd)
   end
 end
 
@@ -176,18 +187,47 @@ class Lazor < Action
   end
 end
 
-# 敵出現パターン
-ENCOUNTER = Fiber.new do
-  loop do
-    ENEMIES << Enemy.new(rand(300..340),0)
-    180.times{Fiber.yield}
+# シーンクラス
+class Scene
+  include ActionDSL
+  attr_accessor :sprites,:enemies,:bullets,:encounter
+  def initialize
+    @enemies = []
+    @bullets = []
+    @sprites = [@enemies,@bullets]
+
+    # 敵出現パターン
+    @encounter = Fiber.new do
+      loop do
+        put_enemy
+        wait_sec(3)
+      end
+    end
+  end
+
+  def put_enemy
+    @enemies << Enemy.new(rand(300..340),0,self)
+  end
+
+  def update
+    @encounter.resume
+    Sprite.update @sprites
+    self
+  end
+
+  def clean
+    Sprite.clean @sprites
+    self
+  end
+
+  def draw
+    Sprite.draw @sprites
+    self
   end
 end
 
 # メイン処理
+scene = Scene.new
 Window.loop do
-  ENCOUNTER.resume
-  Sprite.update SPRITES
-  Sprite.clean SPRITES
-  Sprite.draw SPRITES
+  scene.update.clean.draw
 end

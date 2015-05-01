@@ -1,6 +1,5 @@
 # encoding: utf-8
 require "dxruby"
-require "forwardable"
 include Math
 
 # 初期化
@@ -45,28 +44,17 @@ class Enemy < MovingSprite
   attr_accessor :bullets
   IMG = Image.load("enemy.png")
 
-  def initialize(x,y,scene)
+  def initialize(x,y,bullets)
     super(x,y,rand(80..100),rand(1..4),IMG)
     action << [StopAndGo,ZigZag,Wave].sample.new
     action << [ShotAround,ShotSpiral,Lazor].sample.new
     self.angle = 0
-    @bullets = []
+    @bullets = bullets
   end
 
   def update
     super
-    Sprite.update @bullets
     self.angle += 5
-  end
-
-  def clean
-    super
-    Sprite.clean @bullets
-  end
-
-  def draw
-    super
-    Sprite.draw @bullets
   end
 
   def shot(deg,spd)
@@ -115,7 +103,6 @@ end
 class MovingSprite
   include ActionDSL
 end
-
 
 # ２秒進んで３秒とまる
 class StopAndGo < Action
@@ -192,9 +179,9 @@ class Scene
   include ActionDSL
   attr_accessor :sprites,:enemies,:bullets,:encounter
   def initialize
-    @enemies = []
     @bullets = []
-    @sprites = [@enemies,@bullets]
+    @enemies = []
+    @sprites = [@bullets,@enemies]
 
     # 敵出現パターン
     @encounter = Fiber.new do
@@ -206,28 +193,19 @@ class Scene
   end
 
   def put_enemy
-    @enemies << Enemy.new(rand(300..340),0,self)
+    @enemies << Enemy.new(rand(300..340),0,@bullets)
   end
 
   def update
     @encounter.resume
     Sprite.update @sprites
-    self
-  end
-
-  def clean
     Sprite.clean @sprites
-    self
-  end
-
-  def draw
     Sprite.draw @sprites
-    self
   end
 end
 
 # メイン処理
-scene = Scene.new
+s = Scene.new
 Window.loop do
-  scene.update.clean.draw
+  s.update
 end
